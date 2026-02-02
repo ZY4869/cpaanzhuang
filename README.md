@@ -1,4 +1,46 @@
-# CLIProxyAPIPlus Linux Installer
+# CLIProxyAPIPlus Linux 安装脚本（默认中文）
+
+> 语言 / Language：**中文（默认）** | [English](#english-version)
+
+这是一个用于安装与升级 `CLIProxyAPIPlus` 的 Linux 一键安装脚本，支持自动下载、配置保护、`systemd` 服务管理和状态检查。
+
+## 中文说明
+
+### 功能概览
+
+- 自动识别 Linux 架构并安装最新版本
+- 升级时自动保护 `config.yaml`，避免配置被覆盖
+- 自动生成 API Key（`sk-...` 格式）
+- 自动创建并管理 `systemd --user` 服务
+- 支持状态检查、配置检查、卸载和文档管理
+
+### 快速开始
+
+```bash
+# 一键安装（请替换为你的仓库）
+curl -fsSL https://raw.githubusercontent.com/<YOUR_GITHUB_USER>/<YOUR_REPO>/main/cliproxyapi-installer | bash
+
+# 或手动克隆后运行
+git clone https://github.com/<YOUR_GITHUB_USER>/<YOUR_REPO>.git
+cd <YOUR_REPO>
+./cliproxyapi-installer
+```
+
+### 常用命令
+
+```bash
+./cliproxyapi-installer
+./cliproxyapi-installer status
+./cliproxyapi-installer check-config
+./cliproxyapi-installer auth
+./cliproxyapi-installer uninstall
+```
+
+---
+
+## English Version
+
+### CLIProxyAPIPlus Linux Installer
 
 A comprehensive Linux installation script for [CLIProxyAPIPlus](https://github.com/router-for-me/CLIProxyAPIPlus) that automates installation, upgrades, and management of the CLIProxyAPIPlus service.
 
@@ -19,11 +61,11 @@ A comprehensive Linux installation script for [CLIProxyAPIPlus](https://github.c
 
 ```bash
 # Download and run the installer
-curl -fsSL https://raw.githubusercontent.com/brokechubb/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer | bash
+curl -fsSL https://raw.githubusercontent.com/<YOUR_GITHUB_USER>/<YOUR_REPO>/main/cliproxyapi-installer | bash
 
 # Or clone and run manually
-git clone https://github.com/brokechubb/cliproxyapi-installer.git
-cd cliproxyapi-installer
+git clone https://github.com/<YOUR_GITHUB_USER>/<YOUR_REPO>.git
+cd <YOUR_REPO>
 ./cliproxyapi-installer
 ```
 
@@ -203,6 +245,17 @@ systemctl --user stop cliproxyapi.service
 # Restart the service
 systemctl --user restart cliproxyapi.service
 ```
+
+### Scheduled Restart (Beijing Time 04:00)
+
+If your VPS uses `UTC` (common default), Beijing Time `04:00` equals `20:00 UTC` (previous day). You can set up a daily scheduled restart via a systemd user timer:
+
+```bash
+# Check next run time
+systemctl --user list-timers --all | grep -F cliproxyapi-restart
+```
+
+Setup instructions: see `SCHEDULED_RESTART.md`.
 
 ### Service Status During Upgrades
 
