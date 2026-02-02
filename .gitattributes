@@ -1,0 +1,5 @@
+# Ensure consistent LF line endings for Linux installer script
+* text=auto
+
+cliproxyapi-installer text eol=lf
+README.md text eol=lf
