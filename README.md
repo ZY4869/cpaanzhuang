@@ -19,11 +19,11 @@ A comprehensive Linux installation script for [CLIProxyAPIPlus](https://github.c
 
 ```bash
 # Download and run the installer
-curl -fsSL https://raw.githubusercontent.com/brokechubb/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer | bash
+curl -fsSL https://raw.githubusercontent.com/<YOUR_GITHUB_USER>/<YOUR_REPO>/main/cliproxyapi-installer | bash
 
 # Or clone and run manually
-git clone https://github.com/brokechubb/cliproxyapi-installer.git
-cd cliproxyapi-installer
+git clone https://github.com/<YOUR_GITHUB_USER>/<YOUR_REPO>.git
+cd <YOUR_REPO>
 ./cliproxyapi-installer
 ```
 
@@ -203,6 +203,17 @@ systemctl --user stop cliproxyapi.service
 # Restart the service
 systemctl --user restart cliproxyapi.service
 ```
+
+### Scheduled Restart (Beijing Time 04:00)
+
+If your VPS uses `UTC` (common default), Beijing Time `04:00` equals `20:00 UTC` (previous day). You can set up a daily scheduled restart via a systemd user timer:
+
+```bash
+# Check next run time
+systemctl --user list-timers --all | grep -F cliproxyapi-restart
+```
+
+Setup instructions: see `SCHEDULED_RESTART.md`.
 
 ### Service Status During Upgrades
 
