@@ -17,23 +17,80 @@
 ### 快速开始
 
 ```bash
-# 一键安装（请替换为你的仓库）
-curl -fsSL https://raw.githubusercontent.com/<YOUR_GITHUB_USER>/<YOUR_REPO>/main/cliproxyapi-installer | bash
+# 一键安装（推荐）
+curl -fsSL https://raw.githubusercontent.com/ZY4869/cpaanzhuang/main/cliproxyapi-installer | bash
 
 # 或手动克隆后运行
-git clone https://github.com/<YOUR_GITHUB_USER>/<YOUR_REPO>.git
-cd <YOUR_REPO>
+git clone https://github.com/ZY4869/cpaanzhuang.git
+cd cpaanzhuang
 ./cliproxyapi-installer
 ```
 
-### 常用命令
+### 安装后必做
+
+```bash
+cd ~/cliproxyapi
+nano config.yaml
+```
+
+按需完成登录授权（可多选）：
+
+```bash
+./cli-proxy-api-plus --login           # Gemini
+./cli-proxy-api-plus --codex-login     # OpenAI
+./cli-proxy-api-plus --claude-login    # Claude
+./cli-proxy-api-plus --qwen-login      # Qwen
+./cli-proxy-api-plus --iflow-login     # iFlow
+```
+
+启动服务（推荐使用 systemd 用户服务）：
+
+```bash
+systemctl --user enable cliproxyapi.service
+systemctl --user start cliproxyapi.service
+systemctl --user status cliproxyapi.service
+```
+
+### 常用命令（安装脚本）
 
 ```bash
 ./cliproxyapi-installer
 ./cliproxyapi-installer status
 ./cliproxyapi-installer check-config
 ./cliproxyapi-installer auth
+./cliproxyapi-installer generate-key
+./cliproxyapi-installer manage-docs
 ./cliproxyapi-installer uninstall
+```
+
+### 安装目录结构
+
+默认安装到 `~/cliproxyapi/`：
+
+- `cli-proxy-api-plus`：主程序
+- `config.yaml`：配置文件（升级保留）
+- `cliproxyapi.service`：systemd 用户服务文件
+- `version.txt`：当前版本信息
+- `config_backup/`：升级前自动备份
+
+### 升级说明
+
+- 直接执行 `./cliproxyapi-installer` 或 `./cliproxyapi-installer upgrade`
+- 若服务正在运行：会先停止、升级完成后自动重启
+- 会自动清理旧版本（默认保留最近 2 个）
+- 你的 `config.yaml` 不会被覆盖
+
+### 常见排查
+
+```bash
+# 检查脚本安装状态
+./cliproxyapi-installer status
+
+# 检查配置是否就绪
+./cliproxyapi-installer check-config
+
+# 查看服务日志
+journalctl --user -u cliproxyapi.service -f
 ```
 
 ---
@@ -61,11 +118,11 @@ A comprehensive Linux installation script for [CLIProxyAPIPlus](https://github.c
 
 ```bash
 # Download and run the installer
-curl -fsSL https://raw.githubusercontent.com/<YOUR_GITHUB_USER>/<YOUR_REPO>/main/cliproxyapi-installer | bash
+curl -fsSL https://raw.githubusercontent.com/ZY4869/cpaanzhuang/main/cliproxyapi-installer | bash
 
 # Or clone and run manually
-git clone https://github.com/<YOUR_GITHUB_USER>/<YOUR_REPO>.git
-cd <YOUR_REPO>
+git clone https://github.com/ZY4869/cpaanzhuang.git
+cd cpaanzhuang
 ./cliproxyapi-installer
 ```
 
