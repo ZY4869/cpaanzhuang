@@ -17,10 +17,18 @@
 ### 快速开始
 
 ```bash
-# 一键安装（推荐）
 curl -fsSL https://raw.githubusercontent.com/ZY4869/cpaanzhuang/main/cliproxyapi-installer | bash
+```
 
-# 或手动克隆后运行
+### 一键复制命令
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ZY4869/cpaanzhuang/main/cliproxyapi-installer | bash
+```
+
+### 手动安装（可选）
+
+```bash
 git clone https://github.com/ZY4869/cpaanzhuang.git
 cd cpaanzhuang
 ./cliproxyapi-installer
