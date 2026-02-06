@@ -10,7 +10,10 @@ set -euo pipefail
 REPO_OWNER="ZY4869"
 REPO_NAME="CLIProxyAPIPlus"
 INSTALL_DIR="$HOME/cliproxyapi"
-API_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
+PRIMARY_API_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
+FALLBACK_REPO_OWNER="router-for-me"
+FALLBACK_API_URL="https://api.github.com/repos/${FALLBACK_REPO_OWNER}/${REPO_NAME}/releases/latest"
+RELEASE_SOURCE_REPO="${REPO_OWNER}/${REPO_NAME}"
 SCRIPT_NAME="cliproxyapi-installer"
 BINARY_NAME="cli-proxy-api-plus"
 
@@ -365,23 +368,43 @@ check_dependencies() {
     fi
 }
 
-# Fetch latest release info from GitHub API
-fetch_release_info() {
-    log_info "Fetching latest release information..."
-    
-    local release_info
+# Fetch release info from a specific GitHub API endpoint
+fetch_release_info_from_api() {
+    local api_url="$1"
+
     if command -v curl >/dev/null 2>&1; then
-        release_info=$(curl -s "$API_URL")
+        curl -fsSL "$api_url"
     else
-        release_info=$(wget -qO- "$API_URL")
+        wget -qO- "$api_url"
     fi
-    
-    if [[ -z "$release_info" ]]; then
-        log_error "Failed to fetch release information from GitHub API"
-        exit 1
+}
+
+# Check whether fetched payload looks like a valid GitHub release object
+is_valid_release_info() {
+    local release_info="$1"
+    [[ -n "$release_info" ]] && echo "$release_info" | grep -q '"tag_name":'
+}
+
+# Fetch latest release info from GitHub API with fallback repository support
+fetch_release_info() {
+    log_info "Fetching latest release information from ${REPO_OWNER}/${REPO_NAME}..." >&2
+
+    local release_info=""
+    if release_info=$(fetch_release_info_from_api "$PRIMARY_API_URL" 2>/dev/null) && is_valid_release_info "$release_info"; then
+        RELEASE_SOURCE_REPO="${REPO_OWNER}/${REPO_NAME}"
+        echo "$release_info"
+        return
     fi
-    
-    echo "$release_info"
+
+    log_warning "No usable releases found in ${REPO_OWNER}/${REPO_NAME}; falling back to ${FALLBACK_REPO_OWNER}/${REPO_NAME}" >&2
+    if release_info=$(fetch_release_info_from_api "$FALLBACK_API_URL" 2>/dev/null) && is_valid_release_info "$release_info"; then
+        RELEASE_SOURCE_REPO="${FALLBACK_REPO_OWNER}/${REPO_NAME}"
+        echo "$release_info"
+        return
+    fi
+
+    log_error "Failed to fetch valid release metadata from both ${REPO_OWNER}/${REPO_NAME} and ${FALLBACK_REPO_OWNER}/${REPO_NAME}" >&2
+    exit 1
 }
 
 # Extract version and download URL from release info
@@ -826,6 +849,7 @@ install_cliproxyapi() {
     # Fetch release info
     local release_info
     release_info=$(fetch_release_info)
+    log_info "Release source: ${RELEASE_SOURCE_REPO}"
     
     # Extract version and download URL
     local release_data
