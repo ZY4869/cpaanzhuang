@@ -25,6 +25,9 @@ NC='\033[0m' # No Color
 
 # Track temporary files created by this script (cleaned up on exit)
 TEMP_FILES=()
+RESTART_TIMER_STATUS="not_configured"
+RESTART_TIMER_ON_CALENDAR=""
+RESTART_TIMER_TIMEZONE=""
 
 # Logging functions
 log_info() {
@@ -45,6 +48,198 @@ log_error() {
 
 log_step() {
     echo -e "${CYAN}[STEP]${NC} $1"
+}
+
+get_systemd_user_dir() {
+    echo "$HOME/.config/systemd/user"
+}
+
+get_systemctl_bin() {
+    command -v systemctl 2>/dev/null || echo "/usr/bin/systemctl"
+}
+
+get_system_timezone() {
+    local timezone=""
+
+    if command -v timedatectl >/dev/null 2>&1; then
+        timezone=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+    fi
+
+    if [[ -z "$timezone" && -f /etc/timezone ]]; then
+        timezone=$(tr -d '[:space:]' </etc/timezone)
+    fi
+
+    if [[ -z "$timezone" && -n "${TZ:-}" ]]; then
+        timezone="$TZ"
+    fi
+
+    if [[ -z "$timezone" ]]; then
+        local utc_offset
+        utc_offset=$(date +%z 2>/dev/null || true)
+        if [[ "$utc_offset" == "+0000" ]]; then
+            timezone="UTC"
+        else
+            timezone="LOCAL"
+        fi
+    fi
+
+    echo "$timezone"
+}
+
+get_restart_timer_calendar() {
+    local timezone="$1"
+
+    if [[ "$timezone" == "UTC" || "$timezone" == "Etc/UTC" ]]; then
+        echo "*-*-* 20:00:00"
+    else
+        echo "*-*-* 04:00:00"
+    fi
+}
+
+get_restart_timer_on_calendar() {
+    local timer_file
+    timer_file="$(get_systemd_user_dir)/cliproxyapi-restart.timer"
+
+    if [[ ! -f "$timer_file" ]]; then
+        timer_file="${INSTALL_DIR}/cliproxyapi-restart.timer"
+    fi
+
+    if [[ -f "$timer_file" ]]; then
+        grep '^OnCalendar=' "$timer_file" | head -1 | cut -d'=' -f2-
+    fi
+}
+
+reload_systemd_user_daemon() {
+    local reload_output=""
+
+    if reload_output=$(systemctl --user daemon-reload 2>&1); then
+        log_success "Reloaded systemd user daemon"
+        return 0
+    fi
+
+    log_warning "Could not reload systemd user daemon automatically"
+    if [[ -n "$reload_output" ]]; then
+        echo "$reload_output"
+    fi
+    return 1
+}
+
+show_restart_timer_manual_steps() {
+    echo
+    log_info "If your VPS has not enabled lingering yet, run:"
+    log_info "  sudo loginctl enable-linger \$(whoami)"
+    log_info "Then reload and enable the timer manually:"
+    log_info "  systemctl --user daemon-reload"
+    log_info "  systemctl --user enable --now cliproxyapi-restart.timer"
+    log_info "  systemctl --user list-timers --all | grep -F cliproxyapi-restart"
+    echo
+}
+
+is_restart_timer_enabled() {
+    systemctl --user is-enabled --quiet cliproxyapi-restart.timer 2>/dev/null
+}
+
+create_restart_timer_units() {
+    local install_dir="$1"
+    local systemd_dir
+    systemd_dir=$(get_systemd_user_dir)
+    local systemctl_bin
+    systemctl_bin=$(get_systemctl_bin)
+    local timezone
+    timezone=$(get_system_timezone)
+    local on_calendar
+    on_calendar=$(get_restart_timer_calendar "$timezone")
+    local restart_service_file="${install_dir}/cliproxyapi-restart.service"
+    local restart_timer_file="${install_dir}/cliproxyapi-restart.timer"
+
+    log_info "Creating daily restart timer files..."
+    mkdir -p "$systemd_dir"
+
+    cat > "$restart_service_file" << EOF
+[Unit]
+Description=Restart ${REPO_NAME} Service (user)
+
+[Service]
+Type=oneshot
+ExecStart=${systemctl_bin} --user restart cliproxyapi.service
+EOF
+
+    cat > "$restart_timer_file" << EOF
+[Unit]
+Description=Daily restart for ${REPO_NAME} at Asia/Shanghai 04:00
+
+[Timer]
+# Target schedule: Asia/Shanghai 04:00 every day.
+# On systems using UTC, that corresponds to 20:00 UTC on the previous day.
+OnCalendar=${on_calendar}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    cp "$restart_service_file" "${systemd_dir}/cliproxyapi-restart.service"
+    cp "$restart_timer_file" "${systemd_dir}/cliproxyapi-restart.timer"
+
+    RESTART_TIMER_TIMEZONE="$timezone"
+    RESTART_TIMER_ON_CALENDAR="$on_calendar"
+    log_success "Daily restart timer files created"
+}
+
+setup_restart_timer() {
+    local install_dir="$1"
+    local enable_on_install="$2"
+    local enable_output=""
+
+    create_restart_timer_units "$install_dir"
+
+    if ! reload_systemd_user_daemon; then
+        if [[ "$enable_on_install" == "true" ]]; then
+            RESTART_TIMER_STATUS="enable_failed"
+        else
+            RESTART_TIMER_STATUS="refresh_failed"
+        fi
+        show_restart_timer_manual_steps
+        return 0
+    fi
+
+    if [[ "$enable_on_install" != "true" ]]; then
+        RESTART_TIMER_STATUS="refreshed"
+        log_info "Refreshed daily restart timer definition without changing enabled state"
+        return 0
+    fi
+
+    log_info "Enabling daily restart timer..."
+    if enable_output=$(systemctl --user enable --now cliproxyapi-restart.timer 2>&1); then
+        RESTART_TIMER_STATUS="enabled"
+        log_success "Enabled daily restart timer for Asia/Shanghai 04:00"
+        log_info "Check next run: systemctl --user list-timers --all | grep -F cliproxyapi-restart"
+        return 0
+    fi
+
+    RESTART_TIMER_STATUS="enable_failed"
+    log_warning "Failed to enable daily restart timer automatically"
+    if [[ -n "$enable_output" ]]; then
+        echo "$enable_output"
+    fi
+    show_restart_timer_manual_steps
+}
+
+show_restart_timer_summary() {
+    case "$RESTART_TIMER_STATUS" in
+        "enabled")
+            log_info "Daily restart is enabled for Asia/Shanghai 04:00 (timezone=${RESTART_TIMER_TIMEZONE}, OnCalendar=${RESTART_TIMER_ON_CALENDAR})"
+            ;;
+        "refreshed")
+            log_info "Daily restart timer definition refreshed (timezone=${RESTART_TIMER_TIMEZONE}, enabled state unchanged)"
+            ;;
+        "enable_failed")
+            log_warning "Daily restart timer files were created, but automatic enabling did not complete"
+            ;;
+        "refresh_failed")
+            log_warning "Daily restart timer files were updated, but systemd did not reload automatically"
+            ;;
+    esac
 }
 
 # Display authentication information for first-time setup
@@ -579,7 +774,8 @@ restart_service() {
 create_systemd_service() {
     local install_dir="$1"
     local service_file="${install_dir}/cliproxyapi.service"
-    local systemd_dir="$HOME/.config/systemd/user"
+    local systemd_dir
+    systemd_dir=$(get_systemd_user_dir)
     local systemd_service_file="${systemd_dir}/cliproxyapi.service"
     
     log_info "Creating systemd service file..."
@@ -608,9 +804,6 @@ EOF
     # Copy to systemd user directory
     cp "$service_file" "$systemd_service_file"
     
-    # Reload systemd daemon
-    systemctl --user daemon-reload || log_warning "Could not reload systemd daemon (this is normal on first run)"
-
     log_success "Systemd service file created: $service_file"
     log_success "Systemd service installed: $systemd_service_file"
     log_info "To enable and start the service:"
@@ -850,9 +1043,16 @@ install_cliproxyapi() {
     
     log_step "Latest version: $version"
     
+    RESTART_TIMER_STATUS="not_configured"
+    RESTART_TIMER_ON_CALENDAR=""
+    RESTART_TIMER_TIMEZONE=""
+
     # Check if already up to date
     if [[ "$is_upgrade" == true && "$current_version" == "$version" ]]; then
         log_success "${REPO_NAME} is already up to date (version $version)"
+        create_systemd_service "$INSTALL_DIR"
+        setup_restart_timer "$INSTALL_DIR" false
+        show_restart_timer_summary
         return
     fi
     
@@ -912,6 +1112,13 @@ install_cliproxyapi() {
     
     # Create/update systemd service file
     create_systemd_service "$INSTALL_DIR"
+
+    # Create/update daily restart timer files
+    if [[ "$is_upgrade" == true ]]; then
+        setup_restart_timer "$INSTALL_DIR" false
+    else
+        setup_restart_timer "$INSTALL_DIR" true
+    fi
     
     # Write version file
     write_version_file "$INSTALL_DIR" "$version"
@@ -928,6 +1135,7 @@ install_cliproxyapi() {
     if [[ "$is_upgrade" == true ]]; then
         log_success "${REPO_NAME} upgraded from $current_version to $version!"
         log_info "Installation directory: $INSTALL_DIR"
+        show_restart_timer_summary
         
         if [[ "$service_was_running" == true ]]; then
             log_info "Service has been restarted automatically"
@@ -948,6 +1156,7 @@ install_cliproxyapi() {
     else
         log_success "${REPO_NAME} $version installed successfully!"
         log_info "Installation directory: $INSTALL_DIR"
+        show_restart_timer_summary
         
         # Show authentication information for first-time setup
         show_authentication_info
@@ -989,6 +1198,26 @@ show_status() {
         else
             echo "Systemd Service: Missing"
         fi
+
+        local restart_timer_user_file
+        restart_timer_user_file="$(get_systemd_user_dir)/cliproxyapi-restart.timer"
+        if [[ -f "${INSTALL_DIR}/cliproxyapi-restart.timer" || -f "$restart_timer_user_file" ]]; then
+            local on_calendar
+            on_calendar=$(get_restart_timer_on_calendar)
+            echo "Daily Restart Timer: Available"
+            echo "  Target Time: Asia/Shanghai 04:00"
+            if [[ -n "$on_calendar" ]]; then
+                echo "  OnCalendar: $on_calendar"
+            fi
+            if is_restart_timer_enabled; then
+                echo "  Enabled: Yes"
+            else
+                echo "  Enabled: No"
+            fi
+            echo "  Check next run: systemctl --user list-timers --all | grep -F cliproxyapi-restart"
+        else
+            echo "Daily Restart Timer: Missing"
+        fi
         
         # Check API keys status
         if check_api_keys; then
@@ -1009,6 +1238,9 @@ show_status() {
 
 # Uninstall function
 uninstall_cliproxyapi() {
+    local systemd_dir
+    systemd_dir=$(get_systemd_user_dir)
+
     if [[ ! -d "$INSTALL_DIR" ]]; then
         log_warning "${REPO_NAME} installation directory not found: $INSTALL_DIR"
         exit 0
@@ -1020,6 +1252,11 @@ uninstall_cliproxyapi() {
     echo
     log_info "The following will be removed:"
     find "$INSTALL_DIR" -type f -exec echo "  {}" \;
+    for file_path in "${systemd_dir}/cliproxyapi-restart.service" "${systemd_dir}/cliproxyapi-restart.timer"; do
+        if [[ -f "$file_path" ]]; then
+            echo "  $file_path"
+        fi
+    done
     echo
     
     # Ask for confirmation
@@ -1031,6 +1268,16 @@ uninstall_cliproxyapi() {
         exit 0
     fi
     
+    local disable_output=""
+    if disable_output=$(systemctl --user disable --now cliproxyapi-restart.timer 2>&1); then
+        log_success "Disabled daily restart timer"
+    else
+        log_info "Daily restart timer was not enabled or could not be stopped automatically"
+    fi
+
+    rm -f "${systemd_dir}/cliproxyapi-restart.service" "${systemd_dir}/cliproxyapi-restart.timer"
+    reload_systemd_user_daemon || true
+
     # Remove installation directory
     log_info "Removing ${REPO_NAME} installation..."
     rm -rf "$INSTALL_DIR"
@@ -1151,6 +1398,7 @@ Features:
   - Preserves configuration during upgrades
   - Automatic API key generation
   - Systemd service file creation
+  - Daily restart timer on first install (Asia/Shanghai 04:00)
   - Cleans up old versions (keeps latest 2)
 
 Installation Directory: ~/cliproxyapi/

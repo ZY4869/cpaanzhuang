@@ -111,6 +111,8 @@ A comprehensive Linux installation script for [CLIProxyAPIPlus](https://github.c
 
 ## Features
 
+- ⏰ **Daily Restart Timer** - Automatically enables a daily restart at Asia/Shanghai 04:00 on first install
+
 - 🚀 **Automatic Installation** - Detects your Linux architecture and downloads the latest version
 - 🔄 **Smart Upgrades** - Preserves your configuration and automatically manages systemd service during upgrades
 - 🔑 **API Key Management** - Automatically generates secure API keys
@@ -173,6 +175,14 @@ cd cpaanzhuang
 
 > **💡 Pro Tip**: The installer automatically manages the systemd service during upgrades. If the service is running when you upgrade, it will be gracefully stopped, updated, and restarted automatically.
 
+5. **Daily restart timer** (enabled automatically on first install):
+     ```bash
+     # Check the next scheduled restart
+     systemctl --user list-timers --all | grep -F cliproxyapi-restart
+     ```
+
+> On systems using `UTC`, Shanghai Time `04:00` is written as `20:00 UTC` on the previous day.
+
 ## Usage
 
 The installer script supports multiple commands:
@@ -230,6 +240,11 @@ CLIProxyAPIPlus is installed to `~/cliproxyapi/` with the following structure:
 ├── x.x.x/                 # Version-specific directory
 └── config_backup/         # Configuration backups
 ```
+
+The installer also creates these timer files for the daily restart schedule:
+
+- `cliproxyapi-restart.service` - Daily restart helper service
+- `cliproxyapi-restart.timer` - Daily restart timer
 
 ### API Keys
 
@@ -313,14 +328,28 @@ systemctl --user restart cliproxyapi.service
 
 ### Scheduled Restart (Beijing Time 04:00)
 
-If your VPS uses `UTC` (common default), Beijing Time `04:00` equals `20:00 UTC` (previous day). You can set up a daily scheduled restart via a systemd user timer:
+On a **fresh install**, the installer now creates and enables `cliproxyapi-restart.timer` automatically.
+
+- Target behavior: restart the service every day at **Asia/Shanghai 04:00**
+- If the VPS timezone is `UTC`, the generated timer uses `OnCalendar=*-*-* 20:00:00`
+- On upgrades, the installer refreshes the timer files but does **not** change the current enabled/disabled state
+- If `systemctl --user` cannot enable the timer automatically, the install still completes and prints repair commands
+
+Useful checks:
 
 ```bash
-# Check next run time
 systemctl --user list-timers --all | grep -F cliproxyapi-restart
+systemctl --user is-enabled cliproxyapi-restart.timer
+systemctl --user status cliproxyapi-restart.timer --no-pager
 ```
 
-Setup instructions: see `SCHEDULED_RESTART.md`.
+If automatic enablement fails, run:
+
+```bash
+sudo loginctl enable-linger $(whoami)
+systemctl --user daemon-reload
+systemctl --user enable --now cliproxyapi-restart.timer
+```
 
 ### Service Status During Upgrades
 
